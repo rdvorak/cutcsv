@@ -1,0 +1,43 @@
+- match: STAT.*
+  codepage: ""
+  delimiter: "|"
+  headerline: 7
+  skip: 8
+  trim: LR
+  time: "02/01/2016 15:04:05"
+  comment: "END OF FILE"
+  field:
+    type:
+        CTDT: Time
+    default:
+        TACN: 64
+    match:
+        SMOD: (^.)
+        PNRR: (\w+)\/(\w+)
+    printf:
+        FLAG: [ "%s", "[SMOD][1]" ]
+        PNR:  [ "%s", "[PNRR][1]" ]
+        PNRA: [ "%s", "[PNRR][2]" ]
+        TACN: [ "%03s", "[TACN]"  ]
+    divide:
+        A: [ TACN, 36]
+        B: [ TACN, 36]
+    case:
+        TYPDOC: 
+            M: MCO
+            X: EBT
+            T: FLT
+            F: FIM
+  file:
+  - match: (STAT_ISSUE_FOP)(\d+)NJOB(\d+)_(\d+).DAT
+    header: [SQNU, CTDT, MNTH, PERI_EMIS, PERI_PAYT, NJOB, SMOD, TDNR, UTNR, DAIS, TYPDOC, SRCI, AGTN, AGTN_NAME, ETKT, TOUR, MARK, PXNM, PNRR, NPAX, FPAC, FPTP, FPAF, FPTF, FPCF, FPAM, FPTX, FPCM, CORT, CUTP, CUTP_TO_EUR, CUTP_TO_COA, SQNU_RELATED, ETCA, FPI1, FPI2, SQNU_PAYT, UCPN, CSTF, UTAN, GL_POST_DATE, GL_STATUS, GL_NJOB, CORT_COAM, CORT_CORT, CORT_SPAM, CORT_SPRT, VATC, VATF]
+    field:
+        default:
+            RECTYPE: FOP
+    output:
+      default:
+        filter : [ SMOD, eq, "DEL" ]
+        fields : [ FLAG, TACN, TDNR, DAIS, TYPDOC, AGTN, PNRR ]
+        headerline : Y
+        file   : stdout
+            
