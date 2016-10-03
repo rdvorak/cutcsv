@@ -1,8 +1,9 @@
-package cutcsv
+package main
 
 import (
 	"bytes"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -14,26 +15,54 @@ import (
 	"text/template"
 	"unicode/utf8"
 
+	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"gopkg.in/yaml.v2"
 )
+
+var TemplateFuncMap = template.FuncMap{
+	"Add":       func(x, y float64) float64 { return (x + y) },
+	"Contains":  func(s, substr string) bool { return strings.Contains(s, substr) },
+	"Div":       func(x, y float64) float64 { return (x / y) },
+	"GetEnv":    func(name string) string { return os.Getenv(name) },
+	"HasPrefix": func(s, prefix string) bool { return strings.HasPrefix(s, prefix) },
+	"HasSuffix": func(s, suffix string) bool { return strings.HasSuffix(s, suffix) },
+	"Join":      func(a []string, sep string) string { return strings.Join(a, sep) },
+	"Mul":       func(x, y float64) float64 { return x * y },
+	"Replace":   func(s, old, new string, n int) string { return strings.Replace(s, old, new, n) },
+	"Split":     func(s, sep string) []string { return strings.Split(s, sep) },
+	"Sub":       func(a, b float64) float64 { return a - b },
+	"Title":     func(s string) string { return strings.Title(s) },
+	"TrimSpace": func(s string) string { return strings.TrimSpace(s) },
+	"ToLower":   func(s string) string { return strings.ToLower(s) },
+	"ToUpper":   func(s string) string { return strings.ToUpper(s) },
+}
 
 //MatchFile ...
 type MatchFile struct {
 	MatchFile string            `yaml:",omitempty"`
 	Delimiter string            `yaml:",omitempty" short:"d" long:"delimiter" default:","`
-	Fields    string            `yaml:",omitempty" short:"f" long:"fields" default:"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"`
+	Fields    string            `yaml:",omitempty" short:"i" long:"inputFields" default:"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"`
 	Comment   string            `yaml:",omitempty"`
 	Trim      string            `yaml:",omitempty" default:"L"`
 	Time      string            `yaml:",omitempty"`
 	Skip      int               `yaml:",omitempty" short:"s" long:"skip" default:"0"`
 	Template  map[string]string `yaml:",omitempty"`
-	Field     map[string]string `yaml:",omitempty" long:"field"`
+	Field     map[string]string `yaml:",omitempty" short:"a" long:"field"`
 }
 
-type InputOptions struct {
-	ConfigFile string `long:"conf"`
-	config     []MatchFile
+//Options ...
+type Options struct {
+	ConfigFile  string `short:"c" long:"conf"`
+	config      []MatchFile
+	ConfigInput MatchFile
+	Output      OutputOptions
+}
+
+//OutputOptions ...
+type OutputOptions struct {
+	Template string `short:"t" long:"outputTemplate"`
+	Fields   string `short:"o" long:"output"`
 }
 
 //ReaderCSV ...
@@ -66,15 +95,15 @@ type WriterCSV struct {
 }
 
 //ReadConfig ...
-func (c *InputOptions) ReadConfig(file string) {
+func (c *Options) ReadConfig() {
 
-	src, err := ioutil.ReadFile(file)
+	src, err := ioutil.ReadFile(c.ConfigFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error at ReadFile %s: %v", c.ConfigFile, err)
 	}
 	err = yaml.Unmarshal(src, &c.config)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("error at yaml.Unmarshal: %v", err)
 	}
 }
 
@@ -107,7 +136,7 @@ func NewReaderCSV(reader io.Reader, input string, cfg []MatchFile) *ReaderCSV {
 		fieldMap:  make(map[string]field),
 		valueMap:  make(map[string]interface{}),
 	}
-	tmpl := template.New("master").Funcs(CSVTemplateFuncMap)
+	tmpl := template.New("master").Funcs(TemplateFuncMap)
 	for _, c := range cfg {
 		if matched, _ := regexp.MatchString(c.MatchFile, input); !matched {
 			continue
@@ -170,7 +199,7 @@ func atoi(a string) int {
 }
 
 //Query ...
-func (r *ReaderCSV) Query(w *WriterCSV, outFields ...string) {
+func (r *ReaderCSV) Query(w *WriterCSV, outFields string) {
 	r.line = 0
 	w.line = 0
 	for {
@@ -183,7 +212,7 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields ...string) {
 			break
 		}
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("error reading input file %s: %v", r.input, err)
 		}
 		r.line++
 		if strings.HasPrefix(rcIn[0], r.comment) || r.line <= r.skip {
@@ -210,7 +239,8 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields ...string) {
 			}
 		}
 
-		for _, v := range outFields {
+		for _, v := range strings.Split(outFields, ",") {
+			v = strings.TrimSpace(v)
 			if tmpl := r.fieldMap[v].template; tmpl != nil {
 				var buf bytes.Buffer
 				err := tmpl.Execute(&buf, r.valueMap)
@@ -238,21 +268,32 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields ...string) {
 }
 
 func main() {
-
-	input := "STAT_ISSUE_CPNI20160920NJOB49_1608.DAT"
-	var opt InputOptions
-	opt.ReadConfig("edgar_csv.yaml")
-	//log.Printf("%+v", cfg)
-	fi, err := os.Open(input)
+	var options Options
+	args, err := flags.ParseArgs(&options, os.Args)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	defer fi.Close()
+	if options.ConfigFile == "" {
+		options.config = append(options.config, options.ConfigInput)
+	} else {
+		options.ReadConfig()
+	}
+	fmt.Println(options)
+	fmt.Println(args)
+	fmt.Println("")
+	for _, file := range args[1:] {
+		fh, err := os.Open(file)
+		if err != nil {
+			log.Fatalf("error openning file : %v", err)
+		}
+		defer fh.Close()
 
-	r := NewReaderCSV(fi, path.Base(input), opt.config)
-	w := NewWriterCSV(os.Stdout)
-	w.limit = 10
-	//log.Printf("%+v", r)
-	r.Query(w, "SQNU", "RECTYPE", "TACN", "TDNR", "DAIS", "TYPDOC", "AGTN", "FAR_CZK")
-	_ = tablewriter.NewWriter(os.Stdout)
+		r := NewReaderCSV(fh, path.Base(file), options.config)
+		fmt.Println(r)
+		w := NewWriterCSV(os.Stdout)
+		w.limit = 10
+		//log.Printf("%+v", r)
+		r.Query(w, options.Output.Fields)
+		_ = tablewriter.NewWriter(os.Stdout)
+	}
 }

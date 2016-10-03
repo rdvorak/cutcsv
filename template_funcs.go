@@ -1,4 +1,4 @@
-package cutcsv
+package template_fu
 
 import (
 	"os"
@@ -6,8 +6,8 @@ import (
 	"text/template"
 )
 
-//CSVTemplateFuncMap ......
-var CSVTemplateFuncMap = template.FuncMap{
+//TemplateFuncMap ......
+var TemplateFuncMap = template.FuncMap{
 	"Add":       func(x, y float64) float64 { return (x + y) },
 	"Contains":  func(s, substr string) bool { return strings.Contains(s, substr) },
 	"Div":       func(x, y float64) float64 { return (x / y) },
