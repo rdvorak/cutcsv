@@ -3,10 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/csv"
-	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"regexp"
@@ -15,10 +13,13 @@ import (
 	"text/template"
 	"unicode/utf8"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"gopkg.in/yaml.v2"
 )
+
+var log = logrus.New()
 
 var TemplateFuncMap = template.FuncMap{
 	"Add":       func(x, y float64) float64 { return (x + y) },
@@ -40,29 +41,33 @@ var TemplateFuncMap = template.FuncMap{
 
 //MatchFile ...
 type MatchFile struct {
-	MatchFile string            `yaml:",omitempty"`
-	Delimiter string            `yaml:",omitempty" short:"d" long:"delimiter" default:","`
-	Fields    string            `yaml:",omitempty" short:"i" long:"inputFields" default:"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"`
-	Comment   string            `yaml:",omitempty"`
-	Trim      string            `yaml:",omitempty" default:"L"`
-	Time      string            `yaml:",omitempty"`
-	Skip      int               `yaml:",omitempty" short:"s" long:"skip" default:"0"`
-	Template  map[string]string `yaml:",omitempty"`
-	Field     map[string]string `yaml:",omitempty" short:"a" long:"field"`
+	MatchFile  string            `yaml:",omitempty"`
+	Delimiter  string            `yaml:",omitempty" short:"d" long:"Delimiter" default:","`
+	Fields     string            `yaml:",omitempty" short:"i" long:"Fields" default:"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"`
+	Comment    string            `yaml:",omitempty"`
+	Trim       string            `yaml:",omitempty" default:"L"`
+	Time       string            `yaml:",omitempty"`
+	Skip       int               `yaml:",omitempty" short:"s" long:"SkipLines" default:"0"`
+	HeaderLine int               `yaml:",omitempty" long:"HeaderLine"`
+	Template   map[string]string `yaml:",omitempty"`
+	Field      map[string]string `yaml:",omitempty" short:"a" long:"field"`
 }
 
 //Options ...
 type Options struct {
-	ConfigFile  string `short:"c" long:"conf"`
-	config      []MatchFile
-	ConfigInput MatchFile
-	Output      OutputOptions
+	ConfigFile string `short:"c" long:"conf"`
+	config     []MatchFile
+	Input      MatchFile     `group:"input" namespace:"input"`
+	Output     OutputOptions `group:"output" namespace:"output"`
 }
 
 //OutputOptions ...
 type OutputOptions struct {
-	Template string `short:"t" long:"outputTemplate"`
-	Fields   string `short:"o" long:"output"`
+	Template   string `short:"t" long:"Template"`
+	Fields     string `short:"o" long:"Fields"`
+	Limit      int    `short:"l" long:"Limit"`
+	WithHeader bool   `short:"H" long:"Header"`
+	HeaderText string `long:"HeaderText"`
 }
 
 //ReaderCSV ...
@@ -77,7 +82,6 @@ type ReaderCSV struct {
 	valueMap  map[string]interface{}
 	record    []string
 	line      int
-	recordSet [][]string
 	reader    *csv.Reader
 }
 
@@ -89,9 +93,13 @@ type field struct {
 
 //WriterCSV ...
 type WriterCSV struct {
-	writer *csv.Writer
-	limit  int
-	line   int
+	writer     *csv.Writer
+	limit      int
+	line       int
+	fields     []string
+	template   *template.Template
+	withHeader bool
+	headerText string
 }
 
 //ReadConfig ...
@@ -121,11 +129,22 @@ func nvl(p1, p2 string) string {
 }
 
 // NewWriterCSV ---
-func NewWriterCSV(w io.Writer) *WriterCSV {
-	return &WriterCSV{
-		writer: csv.NewWriter(os.Stdout),
-		limit:  -1,
+func NewWriterCSV(w io.Writer, opt OutputOptions) *WriterCSV {
+	a := &WriterCSV{
+		writer:     csv.NewWriter(w),
+		limit:      opt.Limit,
+		withHeader: opt.WithHeader,
+		headerText: opt.HeaderText,
+		fields:     strings.Split(strings.Replace(opt.Fields, " ", "", -1), ","),
 	}
+	if opt.Template != "" {
+		a.template = template.Must(template.New("output").Parse(opt.Template))
+		a.fields = []string{}
+		if a.headerText == "" {
+			a.headerText = opt.Template
+		}
+	}
+	return a
 }
 
 // NewReaderCSV ---
@@ -199,9 +218,14 @@ func atoi(a string) int {
 }
 
 //Query ...
-func (r *ReaderCSV) Query(w *WriterCSV, outFields string) {
+func View(r *ReaderCSV, w *WriterCSV) {
 	r.line = 0
 	w.line = 0
+	if w.withHeader && w.headerText == "" {
+		if err := w.writer.Write(w.fields); err != nil {
+			log.Fatalln("error writing record to csv:", err)
+		}
+	}
 	for {
 		if w.limit > -1 && w.line >= w.limit {
 			break
@@ -211,11 +235,13 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields string) {
 		if err == io.EOF {
 			break
 		}
+		//log.Debugln("read line:", r.line)
 		if err != nil {
 			log.Fatalf("error reading input file %s: %v", r.input, err)
 		}
 		r.line++
-		if strings.HasPrefix(rcIn[0], r.comment) || r.line <= r.skip {
+		if (r.comment != "" && strings.HasPrefix(rcIn[0], r.comment)) || r.line <= r.skip {
+			//log.Debugln("skip line:", r.line)
 			continue
 		}
 
@@ -239,21 +265,32 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields string) {
 			}
 		}
 
-		for _, v := range strings.Split(outFields, ",") {
-			v = strings.TrimSpace(v)
-			if tmpl := r.fieldMap[v].template; tmpl != nil {
-				var buf bytes.Buffer
-				err := tmpl.Execute(&buf, r.valueMap)
-				if err != nil {
-					log.Println("executing template:", err)
-				}
-				rcOut = append(rcOut, buf.String())
-			} else if i := r.fieldMap[v].fieldIndex; i >= 0 && i < len(rcIn) {
-				rcOut = append(rcOut, rcIn[i])
+		if w.template != nil {
+			var buf bytes.Buffer
+			err := w.template.Execute(&buf, r.valueMap)
+			if err != nil {
+				log.Println("executing template:", err)
+			}
+			rcOut = []string{buf.String()}
 
+		} else {
+
+			for _, v := range w.fields {
+				if tmpl := r.fieldMap[v].template; tmpl != nil {
+					var buf bytes.Buffer
+					err := tmpl.Execute(&buf, r.valueMap)
+					if err != nil {
+						log.Println("executing template:", err)
+					}
+					rcOut = append(rcOut, buf.String())
+				} else if i := r.fieldMap[v].fieldIndex; i >= 0 && i < len(rcIn) {
+					rcOut = append(rcOut, rcIn[i])
+
+				}
 			}
 		}
 		//rsetOut = append(rsetOut, rcOut)
+		//log.Debugln("write line:", w.line)
 		w.line++
 		if err := w.writer.Write(rcOut); err != nil {
 			log.Fatalln("error writing record to csv:", err)
@@ -268,19 +305,18 @@ func (r *ReaderCSV) Query(w *WriterCSV, outFields string) {
 }
 
 func main() {
+	log.Level = logrus.DebugLevel
 	var options Options
 	args, err := flags.ParseArgs(&options, os.Args)
 	if err != nil {
 		panic(err)
 	}
 	if options.ConfigFile == "" {
-		options.config = append(options.config, options.ConfigInput)
+		options.config = append(options.config, options.Input)
 	} else {
 		options.ReadConfig()
 	}
-	fmt.Println(options)
-	fmt.Println(args)
-	fmt.Println("")
+	log.Debug(options)
 	for _, file := range args[1:] {
 		fh, err := os.Open(file)
 		if err != nil {
@@ -289,11 +325,12 @@ func main() {
 		defer fh.Close()
 
 		r := NewReaderCSV(fh, path.Base(file), options.config)
-		fmt.Println(r)
-		w := NewWriterCSV(os.Stdout)
-		w.limit = 10
-		//log.Printf("%+v", r)
-		r.Query(w, options.Output.Fields)
+		log.Debugf("%+v", r)
+		w := NewWriterCSV(os.Stdout, options.Output)
+		if w.withHeader && w.headerText != "" {
+			io.WriteString(os.Stdout, "\""+w.headerText+"\"\n")
+		}
+		View(r, w)
 		_ = tablewriter.NewWriter(os.Stdout)
 	}
 }
