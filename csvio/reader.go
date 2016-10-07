@@ -16,6 +16,7 @@ import (
 type ReaderCSV struct {
 	reader    *csv.Reader
 	input     string
+	fileNum   int
 	filePath  string
 	trim      string
 	delimiter rune
@@ -34,12 +35,13 @@ type field struct {
 }
 
 // NewReaderCSV ---
-func NewReaderCSV(reader io.Reader, input string, cfg []FileOptions) *ReaderCSV {
+func NewReaderCSV(reader io.Reader, i int, input string, cfg []FileOptions) *ReaderCSV {
 	rCSV := &ReaderCSV{
 		delimiter: ',',
 		skip:      0,
 		fieldMap:  make(map[string]field),
 		valueMap:  make(map[string]interface{}),
+		fileNum:   i,
 	}
 	tmpl := template.New("master").Funcs(GetTemplateFuncMap())
 
