@@ -2,6 +2,7 @@ package csvio
 
 import (
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -51,6 +52,106 @@ func MgoLookup(url, id string) map[string]string {
 	return result
 }
 
+//SsDiv ....
+//analogy to SsMul with the division instead of multiplication
+//Example:
+//SsDiv "014.15.36E" 0, 3, 1, 4, 6, 60, 7, 9, 3600
+//converts geo coordinates to degrees
+func SsDiv(s string, posmap []float64) float64 {
+	var sum, num, mul float64
+	var from, to int
+	if len(posmap) > 1 {
+		for i, pos := range posmap {
+			switch math.Mod(float64(i), 3) {
+			case 0:
+				if i > 2 {
+					sum += num / mul
+				}
+				from = int(pos)
+				num = 1
+			case 1:
+				to = int(pos)
+				num, _ = strconv.ParseFloat(s[from:to], 64)
+				mul = 1
+			case 2:
+				mul = pos
+			}
+		}
+		return sum + (num / mul)
+	}
+	return 0
+}
+
+//SsMul ....
+// first argument is string
+// remaining arguments are repeating blocks of 3 arguments where first 2 arguments defines substring (slice) of the first argument and the third si the multuplicator, which is optional in the last block
+// the result of the block is multiplivation of number from the string and the multuplicator
+// the result of the fucntions is sum of block results
+// Example:
+// SSumMul("01H.30M.20S", 0, 2, 3600, 4, 6, 60, 6, 8)
+// calculates number of seconds: 1*3600 + 30*60 + 20 from the given string
+func SsMul(s string, posmap []float64) float64 {
+	var sum, num, mul float64
+	var from, to int
+	if len(posmap) > 1 {
+		for i, pos := range posmap {
+			switch math.Mod(float64(i), 3) {
+			case 0:
+				if i > 2 {
+					sum += num * mul
+				}
+				from = int(pos)
+				num = 1
+			case 1:
+				to = int(pos)
+				num, _ = strconv.ParseFloat(s[from:to], 64)
+				mul = 1
+			case 2:
+				mul = pos
+			}
+		}
+		return sum + (num * mul)
+	}
+	return 0
+}
+
+//SString ....
+func SString(s string, posmap []int) string {
+
+	var substr string
+	var from, to int
+	for i, pos := range posmap {
+		if math.Mod(float64(i), 2) == 0 {
+			if i > 1 {
+				substr += s[from:to]
+			}
+			from = pos
+			to = len(s)
+		} else {
+			to = pos
+		}
+	}
+	substr += s[from:to]
+	return substr
+}
+
+//Decode ....
+func Decode(s string, maping []string) string {
+	var in, out string
+	for i, inout := range maping {
+		if math.Mod(float64(i), 2) == 0 {
+			in = inout
+			out = inout
+		} else {
+			if s == in {
+				return inout
+			}
+			out = ""
+		}
+	}
+	return out
+}
+
 //GetTemplateFuncMap ...
 func GetTemplateFuncMap() template.FuncMap {
 	return template.FuncMap{
@@ -66,10 +167,20 @@ func GetTemplateFuncMap() template.FuncMap {
 		"Split":     func(s, sep string) []string { return strings.Split(s, sep) },
 		"Sub":       func(a, b float64) float64 { return a - b },
 		"Title":     func(s string) string { return strings.Title(s) },
-		"TrimSpace": func(s string) string { return strings.TrimSpace(s) },
+		"Trim":      func(s string) string { return strings.TrimSpace(s) },
 		"ToLower":   func(s string) string { return strings.ToLower(s) },
 		"ToUpper":   func(s string) string { return strings.ToUpper(s) },
 		"Float":     func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
 		"HMGet":     func(url, id string) map[string]string { return MgoLookup(url, id) },
+		"HGet": func(url, id, key string) string {
+			s := MgoLookup(url, id)
+			if _, ok := s[key]; ok {
+				return s[key]
+			}
+			return ""
+		},
+		"SString": func(s string, posmap ...int) string { return SString(s, posmap) },
+		"SsMul":   func(s string, posmap ...float64) float64 { return SsMul(s, posmap) },
+		"SsDiv":   func(s string, posmap ...float64) float64 { return SsDiv(s, posmap) },
 	}
 }

@@ -78,6 +78,7 @@ func ReadWriteCSV(r *ReaderCSV, w *WriterCSV) {
 							log.Println("executing template:", err)
 						}
 						rcOut = append(rcOut, buf.String())
+						r.valueMap[v] = buf.String()
 					} else if i := r.fieldMap[v].fieldIndex; i >= 0 && i < len(rcIn) {
 						rcOut = append(rcOut, rcIn[i])
 

@@ -55,7 +55,8 @@ func main() {
 		options.ReadConfig()
 	}
 	//log.Debug(options)
-	log.Println(csvio.MgoLookup("localhost/mis/partner_lines", "140627:AF 1737"))
+	//log.Println(csvio.Ss("0123456789", []int{0, 2, 3, 5, 6}))
+	//log.Println(csvio.Decode("X", []string{"E", "+", "W", "-"}), csvio.SSumDiv("014.15.36E", []float64{0, 3, 1, 4, 6, 60, 7, 9, 3600}))
 	//the rest  are input files/dirs
 	if len(args[1:]) > 0 {
 		for i, file := range args[1:] {

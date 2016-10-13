@@ -27,11 +27,12 @@ type OutputOptions struct {
 	Fields        map[string]string
 	DefaultFields string            `yaml:",omitempty" short:"o" long:"Fields"`
 	FieldSet      string            `yaml:",omitempty" short:"O" long:"fieldSet" default:"default"`
-	Delimiter     string            `yaml:",omitempty" long:"outputDelimiter"`
+	Delimiter     string            `yaml:",omitempty" long:"Delimiter"`
 	Limit         int               `yaml:",omitempty" short:"l" long:"Limit" default:"-1"`
 	WithHeader    bool              `yaml:",omitempty" short:"H" long:"Header"`
 	HeaderText    string            `yaml:",omitempty" long:"HeaderText"`
 	Filter        map[string]string `yaml:",omitempty" short:"F" long:"Filter"`
 	UseCRLF       bool              `yaml:",omitempty" long:"UseCRLF"`
 	Codepage      string            `yaml:",omitempty" long:"Codepage"`
+	Tabbed        bool              `yaml:",omitempty" long:"Tab"`
 }

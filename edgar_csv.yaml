@@ -8,7 +8,6 @@
     comment: "END OF FILE"
     template:
       CPVF_NETT: '{{if HasPrefix .EFCM "CSA" }}.CPVF{{else}}{{Sub .CPVF .CPCF | printf "%f" }}{{end}}'
-      FLIGHT_LINE: '{{printf "%-3s%04s" .CARR .FTNR}}'
     field:
       TACN: '{{ or .TACN "64" | printf "%03s" }}'
       TDNR: '{{ printf "%010s" .TDNR}}'
@@ -33,14 +32,17 @@
     field:
       RECTYPE: CPNI
       FAR_CZK: '{{template "CPVF_NETT" . }}'
-      MARK: '{{template "FLIGHT_LINE" . }}'
+      MARK_L: '{{printf "%-3s%04s" .CARR .FTNR}}'
       #OPER: '{{with $x := printf "161001%-3s%04s" .CARR .FTNR }}{{HMGet "localhost/mis/partner_lines" $x }}'
-      OPER: '{{$x := HMGet "localhost/mis/partner_lines" (printf "161001:%-3s%04s" .CARR .FTNR)}}{{$x.oper_l}}'
+      PLAN_DEP_D: '{{Ss .FTDA 8 10 3 5 0 2}}'
+      ISS_D: '{{Ss .DAIS 8 10 3 5 0 2}}'
+      OPER_L: '{{$oper_l := HGet "mis/partner_lines" (printf "%s:%s" .PLAN_DEP_D .MARK_L) "oper_l"}}{{or $oper_l .MARK_L}}'
+      #OPER_L: '{{$x := HMGet "localhost/mis/partner_lines" (printf "161001:%-3s%04s" .CARR .FTNR)}}{{$x.oper_l}}'
       #OPER: '{{(printf "161001:%-3s%04s" .CARR .FTNR)}}'
       FAR_CZK_BTTO: '{{.CPVF}}'
   output:
     fields:
-      default:  "SQNU,SMOD,RECTYPE,TACN,TDNR,CPNR,DAIS,TYPDOC,AGTN,FAR_CZK,CARR,FTNR,MARK,OPER"
+      default:  "SQNU,SMOD,RECTYPE,TACN,TDNR,CPNR,ISS_D,TYPDOC,AGTN,FAR_CZK,PLAN_DEP_D,MARK_L,OPER_L"
 
 - matchfile: STAT_OA_SALES(\d+)NJOB(\d+)_(\d+).DAT
   input:
