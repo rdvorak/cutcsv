@@ -34,5 +34,6 @@ type OutputOptions struct {
 	Filter        map[string]string `yaml:",omitempty" short:"F" long:"Filter"`
 	UseCRLF       bool              `yaml:",omitempty" long:"UseCRLF"`
 	Codepage      string            `yaml:",omitempty" long:"Codepage"`
-	Tabbed        bool              `yaml:",omitempty" long:"Tab"`
+	Csv           bool              `yaml:",omitempty" long:"csv"`
+	Table         bool              `yaml:",omitempty" long:"tab"`
 }
